@@ -52,6 +52,7 @@ public class FrontServlet extends HttpServlet {
                 resp.getWriter().println("Type : " + handler.getMethod().getReturnType().getName());
                 resp.getWriter().println("Value : " + result);
 
+
             } catch (Exception e) {
                 throw new ServletException("Erreur", e);
             }
