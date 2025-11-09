@@ -1,43 +1,65 @@
 package servlet;
 
-import java.io.*;
+import class_annotations.Controller;
+import method_annotations.Route;
 import jakarta.servlet.*;
 import jakarta.servlet.http.*;
+import utiles.RouteHandler;
+import utiles.ClasspathScanner;
+
+import java.io.IOException;
+import java.lang.reflect.Method;
+import java.util.*;
 
 public class FrontServlet extends HttpServlet {
-    RequestDispatcher defaultDispatcher;
+
+    private static final String ROUTES_KEY = "app.routes";
+    private RequestDispatcher defaultDispatcher;
 
     @Override
-    public void init() {
+    public void init() throws ServletException {
         defaultDispatcher = getServletContext().getNamedDispatcher("default");
 
-    }
+        ServletContext context = getServletContext();
+        Map<String, RouteHandler> routes = (Map<String, RouteHandler>) context.getAttribute(ROUTES_KEY);
 
-    @Override
-    protected void service(HttpServletRequest req, HttpServletResponse res)
-            throws ServletException, IOException {
-        String url = req.getRequestURI().substring(req.getContextPath().length());
-        boolean ressourceFound = getServletContext().getResource(url) != null;
-
-        if(ressourceFound && !url.equals("/")) {
-           defaultDispatcher.forward(req, res);
-            
+        if (routes == null) {
+            routes =ClasspathScanner.scanRoutes();
+            context.setAttribute(ROUTES_KEY, routes); 
+            System.out.println("Routes stockées dans ServletContext");
         }
-        else {
-            res.getWriter().println("Requested URL: " + url);
-
-        }  
     }
 
     @Override
-    protected void doGet(HttpServletRequest req, HttpServletResponse res)
+    protected void service(HttpServletRequest req, HttpServletResponse resp)
             throws ServletException, IOException {
-        service(req, res); 
-    }
 
-    @Override
-    protected void doPost(HttpServletRequest req, HttpServletResponse res)
-            throws ServletException, IOException {
-        service(req, res);
+        String url = req.getRequestURI().substring(req.getContextPath().length());
+        if (url.isEmpty()) url = "/";
+
+        Map<String, RouteHandler> routes = (Map<String, RouteHandler>) getServletContext().getAttribute(ROUTES_KEY);
+
+        RouteHandler handler = routes != null ? routes.get(url) : null;
+
+        if (handler != null) {
+            try {
+                Object controller = handler.getClazz().getDeclaredConstructor().newInstance();
+                Object result = handler.getMethod().invoke(controller);
+
+                resp.getWriter().println("200 OK : " + url);
+                resp.getWriter().println("Classe : " + controller.getClass().getName());
+                resp.getWriter().println("Méthode : " + handler.getMethod().getName());
+
+            } catch (Exception e) {
+                throw new ServletException("Erreur", e);
+            }
+        } else {
+            if (!"/".equals(url) && getServletContext().getResource(url) != null) {
+                defaultDispatcher.forward(req, resp);
+            } else {
+                resp.setStatus(404);
+                resp.getWriter().println("404 - Not Found : " + url);
+            }
+        }
     }
 }
