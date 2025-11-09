@@ -47,8 +47,11 @@ public class FrontServlet extends HttpServlet {
                 Object result = handler.getMethod().invoke(controller);
 
                 resp.getWriter().println("200 OK : " + url);
-                resp.getWriter().println("Classe : " + controller.getClass().getName());
-                resp.getWriter().println("Méthode : " + handler.getMethod().getName());
+                resp.getWriter().println("Class : " + controller.getClass().getName());
+                resp.getWriter().println("Method : " + handler.getMethod().getName());
+                resp.getWriter().println("Type : " + handler.getMethod().getReturnType().getName());
+                resp.getWriter().println("Value : " + result);
+
 
             } catch (Exception e) {
                 throw new ServletException("Erreur", e);
