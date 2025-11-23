@@ -1,7 +1,9 @@
 package utiles;
 
 import jakarta.servlet.http.HttpServletRequest;
+
 import method_annotations.RequestParam;
+
 
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
@@ -16,6 +18,7 @@ public class ParamResolver {
         for (int i = 0; i < parameters.length; i++) {
             Parameter param = parameters[i];
             String paramName = param.getName();
+
             RequestParam rp = param.getAnnotation(RequestParam.class);
 
             if (rp != null && !rp.value().isEmpty()) {
