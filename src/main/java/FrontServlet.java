@@ -8,9 +8,11 @@ import view.ModelView;
 import utiles.RouteHandler;
 import utiles.UrlUtils;
 import utiles.ClasspathScanner;
+import utiles.ParamResolver;
 
 import java.io.IOException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Parameter;
 import java.util.*;
 
 public class FrontServlet extends HttpServlet {
@@ -42,43 +44,24 @@ protected void service(HttpServletRequest req, HttpServletResponse resp)
     Map<String, RouteHandler> routes = (Map<String, RouteHandler>) 
             getServletContext().getAttribute(ROUTES_KEY);
 
-    RouteHandler handler = routes != null ? routes.get(url) : null;
+    RouteHandler handler = UrlUtils.findRoute(url, routes);
 
-    // ====================== ROUTES DYNAMIQUES ======================
-    if (handler == null) {
-        RouteHandler dynamicHandler = UrlUtils.matchDynamicUrl(url, routes);
-        if (dynamicHandler != null) {
-            try {
-                Object controller = dynamicHandler.getClazz().getDeclaredConstructor().newInstance();
-                Method method = dynamicHandler.getMethod();
-                Object result;
 
-                String id = null;
-                    
-                result = method.invoke(controller, new Object[]{ id });
-
-                // Debug ou traitement du retour
-                resp.getWriter().println("200 OK (dynamic) : " + url);
-                resp.getWriter().println("Result : " + result);
-
-            } catch (Exception e) {
-                throw new ServletException("Erreur dynamique", e);
-            }
-            return;
-        }
-    }
-
-    // ====================== ROUTES STATIQUES ======================
-    if (handler != null) {
+    if(handler != null) {
         try {
             Object controller = handler.getClazz().getDeclaredConstructor().newInstance();
             Method method = handler.getMethod();
 
-            Object result;
-            if (method.getParameterCount() == 0) {
-                result = method.invoke(controller, new Object[0]);  
+            Object[] args = ParamResolver.resolveArguments(method, req);
+            Object result = method.invoke(controller, args);
+
+            if (result instanceof String str) {
+                resp.getWriter().println("String Value : " + str);
+            } else if (result instanceof ModelView mv) {
+                mv.getData().forEach(req::setAttribute);
+                req.getRequestDispatcher(mv.getView()).forward(req, resp);
             } else {
-                throw new ServletException("Méthodes avec paramètres non supportées en route statique pour l'instant");
+                resp.getWriter().println("Résultat : " + result);
             }
 
             resp.getWriter().println("200 OK : " + url);
@@ -86,25 +69,26 @@ protected void service(HttpServletRequest req, HttpServletResponse resp)
             resp.getWriter().println("Method : " + method.getName());
             resp.getWriter().println("Value : " + result);
 
-            // Gestion du retour
-            if (method.getReturnType() == String.class) {
-                resp.getWriter().println((String) result);
-            }
-            else if (method.getReturnType() == ModelView.class) {
-                ModelView mv = (ModelView) result;
-                mv.getData().forEach(req::setAttribute);
-                req.getRequestDispatcher(mv.getView()).forward(req, resp);
-            }
+            return;
+
+        } catch (IllegalArgumentException e) {
+            resp.setStatus(400); // Bad Request
+            resp.setContentType("text/html; charset=UTF-8");
+            resp.getWriter().println("<h2 style='color:red'>400 Error - Invalid request</h2>");
+            resp.getWriter().println("<p><strong>" + e.getMessage() + "</strong></p>");
+            resp.getWriter().println("<p>URL : " + req.getRequestURI() + "</p>");
+            return;
 
         } catch (Exception e) {
-            throw new ServletException("Erreur", e);
+            e.printStackTrace();
+            throw new ServletException("Erreur serveur interne", e);
         }
-        return;
     }
-
+    
     // ====================== 404 ou ressources statiques ======================
     if (!"/".equals(url) && getServletContext().getResource(url) != null) {
         defaultDispatcher.forward(req, resp);
+        return;
     } else {
         resp.setStatus(404);
         resp.getWriter().println("404 - Not Found : " + url);
