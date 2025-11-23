@@ -6,6 +6,7 @@ import jakarta.servlet.*;
 import jakarta.servlet.http.*;
 import view.ModelView;
 import utiles.RouteHandler;
+import utiles.UrlUtils;
 import utiles.ClasspathScanner;
 
 import java.io.IOException;
@@ -32,52 +33,81 @@ public class FrontServlet extends HttpServlet {
     }
 
     @Override
-    protected void service(HttpServletRequest req, HttpServletResponse resp)
-            throws ServletException, IOException {
+protected void service(HttpServletRequest req, HttpServletResponse resp)
+        throws ServletException, IOException {
 
-        String url = req.getRequestURI().substring(req.getContextPath().length());
-        if (url.isEmpty()) url = "/";
+    String url = req.getRequestURI().substring(req.getContextPath().length());
+    if (url.isEmpty()) url = "/";
 
-        Map<String, RouteHandler> routes = (Map<String, RouteHandler>) getServletContext().getAttribute(ROUTES_KEY);
+    Map<String, RouteHandler> routes = (Map<String, RouteHandler>) 
+            getServletContext().getAttribute(ROUTES_KEY);
 
-        RouteHandler handler = routes != null ? routes.get(url) : null;
+    RouteHandler handler = routes != null ? routes.get(url) : null;
 
-        if (handler != null) {
+    // ====================== ROUTES DYNAMIQUES ======================
+    if (handler == null) {
+        RouteHandler dynamicHandler = UrlUtils.matchDynamicUrl(url, routes);
+        if (dynamicHandler != null) {
             try {
-                Object controller = handler.getClazz().getDeclaredConstructor().newInstance();
-                Object result = handler.getMethod().invoke(controller);
+                Object controller = dynamicHandler.getClazz().getDeclaredConstructor().newInstance();
+                Method method = dynamicHandler.getMethod();
+                Object result;
 
-                resp.getWriter().println("200 OK : " + url);
-                resp.getWriter().println("Class : " + controller.getClass().getName());
-                resp.getWriter().println("Method : " + handler.getMethod().getName());
-                // resp.getWriter().println("Type : " + handler.getMethod().getReturnType().getName());
-                // resp.getWriter().println("Value : " + result);
+                String id = null;
+                    
+                result = method.invoke(controller, new Object[]{ id });
 
-                if(handler.getMethod().getReturnType().getName().equals("java.lang.String")) {
-                    // req.getRequestDispatcher("/home.jsp").forward(req, resp);
-                    resp.getWriter().println("Value : " +(String) result);
-                }
-                else if (handler.getMethod().getReturnType().getName().equals("view.ModelView")) {
-                    ModelView model = (ModelView) result;
-                    String view = model.getView();
-                    req.getRequestDispatcher(view).forward(req, resp);
-                }
-                else {
-                    resp.getWriter().println("Value : Not Supported");
-;
-                }
-
+                // Debug ou traitement du retour
+                resp.getWriter().println("200 OK (dynamic) : " + url);
+                resp.getWriter().println("Result : " + result);
 
             } catch (Exception e) {
-                throw new ServletException("Erreur", e);
+                throw new ServletException("Erreur dynamique", e);
             }
-        } else {
-            if (!"/".equals(url) && getServletContext().getResource(url) != null) {
-                defaultDispatcher.forward(req, resp);
-            } else {
-                resp.setStatus(404);
-                resp.getWriter().println("404 - Not Found : " + url);
-            }
+            return;
         }
     }
+
+    // ====================== ROUTES STATIQUES ======================
+    if (handler != null) {
+        try {
+            Object controller = handler.getClazz().getDeclaredConstructor().newInstance();
+            Method method = handler.getMethod();
+
+            Object result;
+            if (method.getParameterCount() == 0) {
+                result = method.invoke(controller, new Object[0]);  
+            } else {
+                throw new ServletException("Méthodes avec paramètres non supportées en route statique pour l'instant");
+            }
+
+            resp.getWriter().println("200 OK : " + url);
+            resp.getWriter().println("Class : " + controller.getClass().getName());
+            resp.getWriter().println("Method : " + method.getName());
+            resp.getWriter().println("Value : " + result);
+
+            // Gestion du retour
+            if (method.getReturnType() == String.class) {
+                resp.getWriter().println((String) result);
+            }
+            else if (method.getReturnType() == ModelView.class) {
+                ModelView mv = (ModelView) result;
+                mv.getData().forEach(req::setAttribute);
+                req.getRequestDispatcher(mv.getView()).forward(req, resp);
+            }
+
+        } catch (Exception e) {
+            throw new ServletException("Erreur", e);
+        }
+        return;
+    }
+
+    // ====================== 404 ou ressources statiques ======================
+    if (!"/".equals(url) && getServletContext().getResource(url) != null) {
+        defaultDispatcher.forward(req, resp);
+    } else {
+        resp.setStatus(404);
+        resp.getWriter().println("404 - Not Found : " + url);
+    }
+}
 }
