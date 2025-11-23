@@ -42,30 +42,35 @@ public class FrontServlet extends HttpServlet {
 
         RouteHandler handler = routes != null ? routes.get(url) : null;
 
-        if (handler != null) {
-            try {
-                Object controller = handler.getClazz().getDeclaredConstructor().newInstance();
-                Object result = handler.getMethod().invoke(controller);
+            if (handler != null) {
+                try {
+                    Object controller = handler.getClazz().getDeclaredConstructor().newInstance();
+                    Object result = handler.getMethod().invoke(controller);
 
-                resp.getWriter().println("200 OK : " + url);
-                resp.getWriter().println("Class : " + controller.getClass().getName());
-                resp.getWriter().println("Method : " + handler.getMethod().getName());
-                // resp.getWriter().println("Type : " + handler.getMethod().getReturnType().getName());
-                // resp.getWriter().println("Value : " + result);
+                    resp.getWriter().println("200 OK : " + url);
+                    resp.getWriter().println("Class : " + controller.getClass().getName());
+                    resp.getWriter().println("Method : " + handler.getMethod().getName());
+                    // resp.getWriter().println("Type : " + handler.getMethod().getReturnType().getName());
+                    // resp.getWriter().println("Value : " + result);
 
-                if(handler.getMethod().getReturnType().getName().equals("java.lang.String")) {
-                    // req.getRequestDispatcher("/home.jsp").forward(req, resp);
-                    resp.getWriter().println("Value : " +(String) result);
-                }
-                else if (handler.getMethod().getReturnType().getName().equals("view.ModelView")) {
-                    ModelView model = (ModelView) result;
-                    String view = model.getView();
-                    req.getRequestDispatcher(view).forward(req, resp);
-                }
-                else {
-                    resp.getWriter().println("Value : Not Supported");
-;
-                }
+                    if(handler.getMethod().getReturnType().getName().equals("java.lang.String")) {
+                        // req.getRequestDispatcher("/home.jsp").forward(req, resp);
+                        resp.getWriter().println("Value : " +(String) result);
+                    }
+                    else if (handler.getMethod().getReturnType().getName().equals("view.ModelView")) {
+                        ModelView model = (ModelView) result;
+
+                        for (Map.Entry<String, Object> entry : model.getData().entrySet()) {
+                            req.setAttribute(entry.getKey(), entry.getValue());
+                        }
+
+                        req.getRequestDispatcher(model.getView()).forward(req, resp);
+                    }
+
+                    else {
+                        resp.getWriter().println("Value : Not Supported");
+    ;
+                    }
 
 
             } catch (Exception e) {
