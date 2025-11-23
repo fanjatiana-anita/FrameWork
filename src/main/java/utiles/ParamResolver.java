@@ -1,6 +1,10 @@
 package utiles;
 
 import jakarta.servlet.http.HttpServletRequest;
+
+import method_annotations.RequestParam;
+
+
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import org.apache.commons.beanutils.ConvertUtils;
@@ -14,6 +18,13 @@ public class ParamResolver {
         for (int i = 0; i < parameters.length; i++) {
             Parameter param = parameters[i];
             String paramName = param.getName();
+
+            RequestParam rp = param.getAnnotation(RequestParam.class);
+
+            if (rp != null && !rp.value().isEmpty()) {
+                paramName = rp.value(); // ← ici on change juste le NOM à chercher
+            }
+
             String stringValue = request.getParameter(paramName);
 
             if (stringValue == null || stringValue.isBlank()) {
