@@ -13,15 +13,24 @@ public class UrlUtils {
 
     public static RouteHandler matchDynamicUrl(String url, Map<String, RouteHandler> routes) {
         for (Map.Entry<String, RouteHandler> entry : routes.entrySet()) {
-            String routeKey = entry.getKey();
+            String routePattern = entry.getKey();  // ex: "/user/{id}", "/article/{slug}"
             RouteHandler handler = entry.getValue();
 
-            if (routeKey.contains("{id}")) {
-                // String regex = routeKey.replace("{id}", "(\\d+)");
-                String regex = routeKey.replace("{id}", "(.+)");
-                if (Pattern.matches(regex, url)) {
-                    return handler;
+            // Construire le regex : {xxx} → ([^/]+)
+            String regex = routePattern.replaceAll("\\{[^}]+\\}", "([^/]+)");
+            regex = "^" + regex + "$";
+
+            java.util.regex.Matcher m = java.util.regex.Pattern.compile(regex).matcher(url);
+            if (m.matches()) {
+                // Extraire les noms des variables : {id}, {slug} → "id", "slug"
+                java.util.regex.Matcher nameMatcher = java.util.regex.Pattern.compile("\\{([^}]+)\\}").matcher(routePattern);
+                int groupIndex = 1;
+                while (nameMatcher.find()) {
+                    String varName = nameMatcher.group(1);
+                    String value = m.group(groupIndex++);
+                    handler.setPathVariable(varName, value);
                 }
+                return handler;
             }
         }
         return null;

@@ -4,14 +4,13 @@ import jakarta.servlet.http.HttpServletRequest;
 
 import method_annotations.RequestParam;
 
-
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import org.apache.commons.beanutils.ConvertUtils;
 
 public class ParamResolver {
 
-    public static Object[] resolveArguments(Method method, HttpServletRequest request) throws IllegalArgumentException {
+    public static Object[] resolveArguments(Method method, HttpServletRequest request, RouteHandler handler) {
         Parameter[] parameters = method.getParameters();
         Object[] args = new Object[parameters.length];
 
@@ -22,10 +21,17 @@ public class ParamResolver {
             RequestParam rp = param.getAnnotation(RequestParam.class);
 
             if (rp != null && !rp.value().isEmpty()) {
-                paramName = rp.value(); // ← ici on change juste le NOM à chercher
+                paramName = rp.value(); 
             }
 
-            String stringValue = request.getParameter(paramName);
+           String stringValue;
+
+           if (handler != null && handler.getPathVariable(paramName) != null) {
+                stringValue = handler.getPathVariable(paramName);
+           }
+            else {
+                stringValue = request.getParameter(paramName);
+            }
 
             if (stringValue == null || stringValue.isBlank()) {
                 throw new IllegalArgumentException(

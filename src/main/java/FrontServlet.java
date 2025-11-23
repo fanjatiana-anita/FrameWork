@@ -52,7 +52,7 @@ protected void service(HttpServletRequest req, HttpServletResponse resp)
             Object controller = handler.getClazz().getDeclaredConstructor().newInstance();
             Method method = handler.getMethod();
 
-            Object[] args = ParamResolver.resolveArguments(method, req);
+            Object[] args = ParamResolver.resolveArguments(method, req, handler);
             Object result = method.invoke(controller, args);
 
             if (result instanceof String str) {
