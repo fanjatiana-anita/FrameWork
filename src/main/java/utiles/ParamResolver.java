@@ -1,7 +1,6 @@
 package utiles;
 
 import jakarta.servlet.http.HttpServletRequest;
-
 import method_annotations.RequestParam;
 
 import java.lang.reflect.Method;
@@ -10,14 +9,15 @@ import org.apache.commons.beanutils.ConvertUtils;
 
 public class ParamResolver {
 
-    public static Object[] resolveArguments(Method method, HttpServletRequest request, RouteHandler handler) {
+    public static Object[] resolveArguments(HttpServletRequest request, RouteHandler handler) {
+            Method method = handler.getMethod();
+        
         Parameter[] parameters = method.getParameters();
         Object[] args = new Object[parameters.length];
 
         for (int i = 0; i < parameters.length; i++) {
             Parameter param = parameters[i];
             String paramName = param.getName();
-
             RequestParam rp = param.getAnnotation(RequestParam.class);
 
             if (rp != null && !rp.value().isEmpty()) {
