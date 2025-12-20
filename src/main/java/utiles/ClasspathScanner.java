@@ -8,10 +8,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.*;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
+import jakarta.servlet.http.*;
+
 
 import utiles.RouteHandler;
 import class_annotations.Controller;
-import method_annotations.Route;
+import method_annotations.*;
 
 public class ClasspathScanner {
 
@@ -20,26 +22,49 @@ public class ClasspathScanner {
      * Scanne TOUT le classpath et retourne toutes les classes chargées.
      * @return Set de Class<?>
      */
-    public static    Map<String, RouteHandler> scanRoutes() {
-        Map<String, RouteHandler> routes = new HashMap<>();
-        Set<Class<?>> classes = scanAllClasses();
+    public static Map<String, List<RouteHandler>> scanRoutes() { 
+        Map<String, List<RouteHandler>> routes = new HashMap<>();  
 
+        Set<Class<?>> classes = scanAllClasses();
         System.out.println("=== SCAN DES CONTRÔLEURS ===");
         int count = 0;
 
         for (Class<?> clazz : classes) {
-            if (clazz.isAnnotationPresent(Controller.class)) {
-                System.out.println("Contrôleur : " + clazz.getName());
-                for (Method m : clazz.getDeclaredMethods()) {
-                    Route r = m.getAnnotation(Route.class);
-                    if (r != null) {
-                        routes.put(r.value(), new RouteHandler(clazz, m));
-                        System.out.println(" " + r.value() + " → " + m.getName() + "()");
-                        count++;
+            if (!clazz.isAnnotationPresent(Controller.class)) continue;
+
+            System.out.println("Contrôleur : " + clazz.getName());
+
+            for (Method m : clazz.getDeclaredMethods()) {
+                List<Map.Entry<String, String>> mappings = new ArrayList<>();
+
+                Route r = m.getAnnotation(Route.class);
+                if (r != null) mappings.add(Map.entry(r.value(), "*"));       
+
+                GetRouteMapping g = m.getAnnotation(GetRouteMapping.class);
+                if (g != null) mappings.add(Map.entry(g.value(), "GET"));
+
+                PostRouteMapping p = m.getAnnotation(PostRouteMapping.class);
+                if (p != null) mappings.add(Map.entry(p.value(), "POST"));
+
+                for (var entry : mappings) {
+                    String url = entry.getKey();
+                    String httpMethod = entry.getValue();
+
+                    if (!url.startsWith("/")) {
+                        url = "/" + url;
                     }
+
+                    routes.computeIfAbsent(url, k -> new ArrayList<>())
+                        .add(new RouteHandler(clazz, m, httpMethod));
+
+                    System.out.println("  " + httpMethod + " " + url + " → " +
+                                    clazz.getSimpleName() + "." + m.getName() + "()");
+
+                    count++;
                 }
             }
         }
+
         System.out.println("=== " + count + " route(s) enregistrée(s) ===");
         return routes;
     }

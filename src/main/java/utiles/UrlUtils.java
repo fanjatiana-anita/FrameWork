@@ -1,20 +1,14 @@
 package utiles;
 
-import java.lang.reflect.Method;
-import java.lang.reflect.Parameter;
-import java.net.URLDecoder;
-import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
-import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 
 public class UrlUtils {
 
-    public static RouteHandler matchDynamicUrl(String url, Map<String, RouteHandler> routes) {
-        for (Map.Entry<String, RouteHandler> entry : routes.entrySet()) {
+    public static RouteHandler matchDynamicUrl(String url, String httpMethod, Map<String, List<RouteHandler>> routes) {
+        for (Map.Entry<String,List <RouteHandler>> entry : routes.entrySet()) {
             String routePattern = entry.getKey();  // ex: "/user/{id}", "/article/{slug}"
-            RouteHandler handler = entry.getValue();
+            List<RouteHandler> handlers = entry.getValue();
 
             // Construire le regex : {xxx} → ([^/]+)
             String regex = routePattern.replaceAll("\\{[^}]+\\}", "([^/]+)");
@@ -22,7 +16,16 @@ public class UrlUtils {
 
             java.util.regex.Matcher m = java.util.regex.Pattern.compile(regex).matcher(url);
             if (m.matches()) {
-                // Extraire les noms des variables : {id}, {slug} → "id", "slug"
+                // Trouver le bon handler selon la methode HTTP
+                RouteHandler handler = null;
+                for (RouteHandler h : handlers) {
+                    if ("*".equals(h.getHttpMethod()) || h.getHttpMethod().equalsIgnoreCase(httpMethod)) {
+                        handler = h;
+                        break;
+                    }
+                }
+                if (handler == null) continue;
+
                 java.util.regex.Matcher nameMatcher = java.util.regex.Pattern.compile("\\{([^}]+)\\}").matcher(routePattern);
                 int groupIndex = 1;
                 while (nameMatcher.find()) {
@@ -36,16 +39,20 @@ public class UrlUtils {
         return null;
     }
    
-    public static RouteHandler findRoute(String requestUrl, Map<String, RouteHandler> routes) {
+    public static RouteHandler findRoute(String requestUrl, String httpMethod ,Map<String, List<RouteHandler>> routes) {
         if (routes == null || requestUrl == null) return null;
 
         String cleanUrl = normalizeUrl(requestUrl);
 
-        RouteHandler handler = routes.get(cleanUrl);
-        if (handler != null) {
-            return handler;
+        List<RouteHandler> handlers = routes.get(cleanUrl);
+        if (handlers != null) {
+            for (RouteHandler h : handlers) {
+                if ("*".equals(h.getHttpMethod()) || h.getHttpMethod().equalsIgnoreCase(httpMethod)) {
+                    return h;
+                }
+            }
         }
-        return matchDynamicUrl(cleanUrl, routes);
+        return matchDynamicUrl(cleanUrl, httpMethod,routes);
     }
 
 
