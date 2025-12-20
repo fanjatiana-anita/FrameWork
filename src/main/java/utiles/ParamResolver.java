@@ -27,7 +27,7 @@ public class ParamResolver {
             Class<?> type = param.getType();
             String name = getParamName(param);
 
-            if(name.isEmpty() || name == null) {
+            if(name == null || name.isEmpty()) {
                 throw new IllegalArgumentException(
                     "Missing required parameter name for argument: " + param.getName()
                 );      
