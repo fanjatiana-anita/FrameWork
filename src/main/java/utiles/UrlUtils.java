@@ -44,7 +44,7 @@ public class UrlUtils {
 
         String cleanUrl = normalizeUrl(requestUrl);
 
-    List<RouteHandler> handlers = routes.get(cleanUrl);
+        List<RouteHandler> handlers = routes.get(cleanUrl);
         if (handlers != null) {
             for (RouteHandler h : handlers) {
                 if ("*".equals(h.getHttpMethod()) || h.getHttpMethod().equalsIgnoreCase(httpMethod)) {

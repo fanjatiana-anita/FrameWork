@@ -62,7 +62,12 @@ public class FrontServlet extends HttpServlet {
                 } else if (result instanceof ModelView mv) {
                     mv.getData().forEach(req::setAttribute);
                     req.getRequestDispatcher(mv.getView()).forward(req, resp);
-                } else {
+                }  
+                // else if (result instanceof Object obj) {
+                //     // mv.getData().forEach(req::setAttribute);
+                //     // req.getRequestDispatcher(mv.getView()).forward(req, resp);
+                // }  
+                else {
                     resp.getWriter().println("Not supported method :");
                 }
 
@@ -73,15 +78,15 @@ public class FrontServlet extends HttpServlet {
 
                 return;
 
-            } catch (IllegalArgumentException e) {
-                resp.setStatus(400); // Bad Request
+            }catch (IllegalArgumentException e) {
+                resp.setStatus(400);
                 resp.setContentType("text/html; charset=UTF-8");
-                resp.getWriter().println("<h2 style='color:red'>400 Error - Invalid request</h2>");
+                resp.getWriter().println("<h2 style='color:red'>400 - Invalid Request</h2>");
                 resp.getWriter().println("<p><strong>" + e.getMessage() + "</strong></p>");
                 resp.getWriter().println("<p>URL : " + req.getRequestURI() + "</p>");
                 return;
-
-            } catch (Exception e) {
+            }
+            catch (Exception e) {
                 e.printStackTrace();
                 throw new ServletException("Erreur serveur interne", e);
             }
@@ -100,7 +105,6 @@ public class FrontServlet extends HttpServlet {
                     .collect(java.util.stream.Collectors.joining(", ")));
             return;
         }
-
         // Ressources statiques (css, js, images...)
         if (!"/".equals(url) && getServletContext().getResource(url) != null) {
             defaultDispatcher.forward(req, resp);
