@@ -9,10 +9,13 @@ public class RouteHandler {
     private final Class<?> clazz;
     private final Method method;
     private final Map<String, String> pathVariables = new HashMap<>();
+    private String httpMethod;
 
-    public RouteHandler(Class<?> clazz, Method method) {
+
+    public RouteHandler(Class<?> clazz, Method method,String httpMethod) {
         this.clazz = clazz;
         this.method = method;
+        this.httpMethod = httpMethod;
     }
 
     public Class<?> getClazz() {
@@ -30,4 +33,7 @@ public class RouteHandler {
     public String getPathVariable(String name) {
         return pathVariables.get(name);
     }
+
+    public String getHttpMethod () {return  this.httpMethod;}
+    public void setHttpMethod(String method) { this.httpMethod = method;}
 }
