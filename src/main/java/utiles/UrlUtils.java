@@ -33,7 +33,7 @@ public class UrlUtils {
                     String value = m.group(groupIndex++);
                     handler.setPathVariable(varName, value);
                 }
-                return handler;
+                return handler;// Page d'accueil pour tester
             }
         }
         return null;
