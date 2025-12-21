@@ -204,7 +204,9 @@ public class ParamResolver {
             String key = entry.getKey();
             String[] values = entry.getValue();
 
-            map.put(key, values);                      
+      
+                map.put(key, values);                       // plusieurs valeurs → String[]
+            
         }
 
         return map;
