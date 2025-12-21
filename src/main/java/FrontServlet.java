@@ -6,12 +6,13 @@ import jakarta.servlet.*;
 import jakarta.servlet.http.*;
 import view.*;
 import utiles.*;
-
+import jakarta.servlet.annotation.MultipartConfig;  
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.*;
 
+@MultipartConfig  
 public class FrontServlet extends HttpServlet {
 
     private static final String ROUTES_KEY = "app.routes";
