@@ -1,20 +1,18 @@
 package servlet;
 
-import class_annotations.Controller;
-import method_annotations.Route;
+import class_annotations.*;
+import method_annotations.*;
 import jakarta.servlet.*;
 import jakarta.servlet.http.*;
-import view.ModelView;
-import utiles.RouteHandler;
-import utiles.UrlUtils;
-import utiles.ClasspathScanner;
-import utiles.ParamResolver;
-
+import view.*;
+import utiles.*;
+import jakarta.servlet.annotation.MultipartConfig;  
 import java.io.IOException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.util.*;
 
+@MultipartConfig  
 public class FrontServlet extends HttpServlet {
 
     private static final String ROUTES_KEY = "app.routes";
@@ -38,6 +36,7 @@ public class FrontServlet extends HttpServlet {
     protected void service(HttpServletRequest req, HttpServletResponse resp)
             throws ServletException, IOException {
 
+        JsonResponse jsonResponse = new JsonResponse(resp);
         String url = req.getRequestURI().substring(req.getContextPath().length());
         if (url.isEmpty()) url = "/";
 
@@ -50,35 +49,66 @@ public class FrontServlet extends HttpServlet {
 
 
         if(handler != null) {
+            Method method = handler.getMethod();
             try {
-                Object controller = handler.getClazz().getDeclaredConstructor().newInstance();
-                Method method = handler.getMethod();
 
+                Object controller = handler.getClazz().getDeclaredConstructor().newInstance();
                 Object[] args = ParamResolver.resolveArguments(req, handler);
                 Object result = method.invoke(controller, args);
 
+                if (method.isAnnotationPresent(Json.class)) {
+                    resp.setContentType("application/json;charset=UTF-8");
+
+                    if (result instanceof ModelView mv) {
+                        if (getServletContext().getResource(mv.getView()) == null) {
+                            jsonResponse.sendJsonError(404, "View Not Found: " + mv.getView());
+                            return;
+                        }
+                        jsonResponse.sendJsonSuccess(mv.getData());
+                        return;
+                    }
+
+                    jsonResponse.sendJsonSuccess(result);
+                    return;
+                }
+                
                 if (result instanceof String str) {
                     resp.getWriter().println("String Value : " + str);
                 } else if (result instanceof ModelView mv) {
+
+                    // Transférer les données
                     mv.getData().forEach(req::setAttribute);
-                    req.getRequestDispatcher(mv.getView()).forward(req, resp);
-                }  
-                // else if (result instanceof Object obj) {
-                //     // mv.getData().forEach(req::setAttribute);
-                //     // req.getRequestDispatcher(mv.getView()).forward(req, resp);
-                // }  
-                else {
-                    resp.getWriter().println("Not supported method :");
+
+                    // Vérifier si la vue existe
+                     String viewPath = mv.getView();
+                        if (getServletContext().getResource(viewPath) == null) {
+                            resp.setStatus(404);
+                            resp.getWriter().println("404 - View Not Found: " + viewPath);
+                            return;
+                        }
+                    RequestDispatcher disp = req.getRequestDispatcher(mv.getView());
+
+                    // SI LA VUE EST INTROUVABLE → gestion JSON ou non JSON
+                    if (disp == null) {
+                        if (method.isAnnotationPresent(Json.class)) {
+                            jsonResponse.sendJsonError(404, "View Not Found: " + mv.getView());
+                            return;
+                        }
+                        resp.setStatus(404);
+                        resp.getWriter().println("404 - View Not Found: " + mv.getView());
+                        return;
+                    }
+
+                    // Si tout est bon → afficher la vue
+                    disp.forward(req, resp);
+                    return;
+                }
+            } catch (IllegalArgumentException e) {
+                if (method.isAnnotationPresent(Json.class)) {
+                    jsonResponse.sendJsonError(400,"Invalid argument: " + e.getMessage());
+                    return;
                 }
 
-                resp.getWriter().println("200 OK : " + url);
-                resp.getWriter().println("Class : " + controller.getClass().getName());
-                resp.getWriter().println("Method : " + method.getName());
-                resp.getWriter().println("Value : " + result);
-
-                return;
-
-            }catch (IllegalArgumentException e) {
                 resp.setStatus(400);
                 resp.setContentType("text/html; charset=UTF-8");
                 resp.getWriter().println("<h2 style='color:red'>400 - Invalid Request</h2>");
@@ -87,8 +117,14 @@ public class FrontServlet extends HttpServlet {
                 return;
             }
             catch (Exception e) {
-                e.printStackTrace();
-                throw new ServletException("Erreur serveur interne", e);
+                Throwable cause = e.getCause() != null ? e.getCause() : e;
+                if (method != null && method.isAnnotationPresent(method_annotations.Json.class)) {
+                    jsonResponse.sendJsonError(500,"Internal error: " + cause.getMessage());
+                    return;
+                }
+
+                cause.printStackTrace();
+                throw new ServletException("Erreur serveur interne", cause);
             }
         }
         
@@ -115,4 +151,6 @@ public class FrontServlet extends HttpServlet {
         resp.setStatus(404);
         resp.getWriter().println("404 - Not Found : " + url);
     }
+
+
 }
