@@ -27,7 +27,7 @@ public class ParamResolver {
             Class<?> type = param.getType();
             String name = getParamName(param);
 
-            if(name == null || name.isEmpty()) {
+            if(name.isEmpty() || name == null) {
                 throw new IllegalArgumentException(
                     "Missing required parameter name for argument: " + param.getName()
                 );      
@@ -70,7 +70,12 @@ public class ParamResolver {
                 args[i] = ConvertUtils.convert(pathValue.trim(), type); 
                 continue;
             }
-            
+            // 3. Objet complexe
+            if (!isSimpleType(type) && !type.isArray() && !Map.class.isAssignableFrom(type)) {
+                args[i] = buildObjectFromParams(type, request.getParameterMap(), "");
+                continue;
+            }
+
             // 3. Paramètre normal (GET ou POST)
             String[] values = request.getParameterValues(name);
 
@@ -101,6 +106,86 @@ public class ParamResolver {
 
         return args;
     }
+
+    private static boolean isSimpleType(Class<?> type) {
+        return type.isPrimitive() ||
+               type.equals(String.class) ||
+               type.equals(Integer.class) ||
+               type.equals(Long.class) ||
+               type.equals(Double.class) ||
+               type.equals(Float.class) ||
+               type.equals(Boolean.class) ||
+               ConvertUtils.lookup(type) != null;
+    }
+
+    private static Object buildObjectFromParams(Class<?> clazz, Map<String, String[]> params, String prefix) {
+        try {
+            Object obj = clazz.getDeclaredConstructor().newInstance();
+
+            for (var field : clazz.getDeclaredFields()) {
+                field.setAccessible(true);
+                Class<?> fieldType = field.getType();
+                String fieldName = field.getName();
+                String fullKey = prefix.isEmpty() ? fieldName : prefix + "." + fieldName;
+
+                // Si Simple → mapping direct
+                if (isSimpleType(fieldType)) {
+                    String[] value = params.get(fullKey);
+                    if (value != null) {
+                        field.set(obj, ConvertUtils.convert(value[0], fieldType));
+                    }
+                }
+                // Si c'est une List<...>
+                else if (java.util.List.class.isAssignableFrom(fieldType)) {
+                    Type genericType = field.getGenericType();
+
+                    if (genericType instanceof ParameterizedType) {
+                        ParameterizedType pt = (ParameterizedType) genericType;
+                        Class<?> elementType = (Class<?>) pt.getActualTypeArguments()[0];
+
+                        java.util.List<Object> list = new java.util.ArrayList<>();
+
+                        int index = 0;
+                        while (true) {
+                            String indexPrefix = fullKey + "[" + index + "]";
+                            boolean found = false;
+
+                            Object nestedObj = elementType.getDeclaredConstructor().newInstance();
+
+                            for (var subField : elementType.getDeclaredFields()) {
+                                subField.setAccessible(true);
+                                String subKey = indexPrefix + "." + subField.getName();
+                                String[] values = params.get(subKey);
+
+                                if (values != null) {
+                                    found = true;
+                                    if (isSimpleType(subField.getType())) {
+                                        subField.set(nestedObj, ConvertUtils.convert(values[0], subField.getType()));
+                                    }
+                                }
+                            }
+
+                            if (!found) break;
+                            list.add(nestedObj);
+                            index++;
+                        }
+
+                        field.set(obj, list);
+                    }
+                }
+                // Objet imbriqué → récursion
+                else {
+                    Object nestedObj = buildObjectFromParams(fieldType, params, fullKey);
+                    field.set(obj, nestedObj);
+                }
+            }
+
+            return obj;
+        } catch (Exception e) {
+            throw new IllegalArgumentException("Failed to bind object : " + clazz.getSimpleName(), e);
+        }
+    }
+
 
     // Récupère le nom du paramètre (@RequestParam("xxx") ou nom de variable)
     private static String getParamName(Parameter param) {
