@@ -1,8 +1,9 @@
 package utiles;
 
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;  // ← AJOUTÉ ICI
 import jakarta.servlet.http.Part;
-import jakarta.servlet.ServletException;  // Ajouté
+import jakarta.servlet.ServletException;
 import method_annotations.RequestParam;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
@@ -46,7 +47,7 @@ public class ParamResolver {
                             }
 
                             if (isFileMapType(valueType)) {
-                                args[i] = buildFilesMap(request, valueType);  // Peut lever IOException/ServletException → géré plus bas
+                                args[i] = buildFilesMap(request, valueType);
                                 continue;
                             }
                         }
@@ -56,6 +57,12 @@ public class ParamResolver {
                                     + "'. Only Map<String,Object>, Map<String,byte[]>, or Map<String,List<byte[]>> are allowed.");
                 }
 
+                // === SUPPORT POUR HttpServletRequest (INJECTION AUTOMATIQUE) ===
+                if (HttpServletRequest.class.isAssignableFrom(type)) {
+                    args[i] = request;
+                    continue;
+                }
+
                 // Path variable {id}
                 String pathValue = handler.getPathVariable(name);
                 if (pathValue != null) {
@@ -63,8 +70,11 @@ public class ParamResolver {
                     continue;
                 }
 
-                // Objet complexe
-                if (!isSimpleType(type) && !type.isArray() && !Map.class.isAssignableFrom(type)) {
+                // Objet complexe (exclure les types servlet spéciaux)
+                if (!isSimpleType(type)
+                        && !type.isArray()
+                        && !Map.class.isAssignableFrom(type)
+                        && !HttpServletRequest.class.isAssignableFrom(type)) {
                     args[i] = buildObjectFromParams(type, request.getParameterMap(), "");
                     continue;
                 }
@@ -88,7 +98,6 @@ public class ParamResolver {
                 }
             }
         } catch (IOException | ServletException e) {
-            // Transformation des exceptions checked en runtime
             throw new IllegalArgumentException("Erreur lors de la lecture des fichiers uploadés : " + e.getMessage(), e);
         } catch (Exception e) {
             System.err.println("ParamResolver ERROR: " + e.getMessage());
@@ -97,8 +106,12 @@ public class ParamResolver {
 
         return args;
     }
+    
+    private static boolean isSpecialServletType(Class<?> type) {
+        return HttpServletRequest.class.isAssignableFrom(type)
+                || HttpServletResponse.class.isAssignableFrom(type);
+    }
 
-    // === Détection du type fichier ===
     private static boolean isFileMapType(Type valueType) {
         if (valueType.equals(byte[].class)) {
             return true;
@@ -111,7 +124,6 @@ public class ParamResolver {
         return false;
     }
 
-    // === Construction de la Map de fichiers ===
     private static Map<String, ?> buildFilesMap(HttpServletRequest request, Type valueType)
             throws IOException, ServletException {
         Map<String, List<byte[]>> multiMap = new HashMap<>();
@@ -120,7 +132,6 @@ public class ParamResolver {
             for (Part part : request.getParts()) {
                 String fileName = part.getSubmittedFileName();
                 if (fileName != null && !fileName.trim().isEmpty() && part.getSize() > 0) {
-                
                     byte[] bytes = part.getInputStream().readAllBytes();
                     if (bytes.length > 0) {
                         String fieldName = part.getName();
@@ -148,7 +159,6 @@ public class ParamResolver {
         }
     }
 
-    // === Méthodes existantes (inchangées) ===
     private static boolean isSimpleType(Class<?> type) {
         return type.isPrimitive() ||
                 type.equals(String.class) ||

@@ -14,7 +14,7 @@ import java.util.*;
 
 @MultipartConfig  
 public class FrontServlet extends HttpServlet {
-//
+
     private static final String ROUTES_KEY = "app.routes";
     private RequestDispatcher defaultDispatcher;
 
