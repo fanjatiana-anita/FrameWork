@@ -1,10 +1,11 @@
 package utiles;
 
 import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;  // ← AJOUTÉ ICI
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.Part;
 import jakarta.servlet.ServletException;
 import method_annotations.RequestParam;
+import method_annotations.Session;
 import java.lang.reflect.Method;
 import java.lang.reflect.Parameter;
 import java.lang.reflect.ParameterizedType;
@@ -15,7 +16,7 @@ import org.apache.commons.beanutils.ConvertUtils;
 
 public class ParamResolver {
 
-    public static Object[] resolveArguments(HttpServletRequest request, RouteHandler handler) {
+    public static Object[] resolveArguments(HttpServletRequest request, HttpServletResponse response, RouteHandler handler) {
         Method method = handler.getMethod();
         Parameter[] parameters = method.getParameters();
         Object[] args = new Object[parameters.length];
@@ -25,14 +26,62 @@ public class ParamResolver {
             for (int i = 0; i < parameters.length; i++) {
                 Parameter param = parameters[i];
                 Class<?> type = param.getType();
+                
+                // ========================================
+                // PRIORITÉ 1 : HttpServletRequest
+                // ========================================
+                if (HttpServletRequest.class.isAssignableFrom(type)) {
+                    args[i] = request;
+                    continue;
+                }
+                
+                // ========================================
+                // PRIORITÉ 2 : HttpServletResponse
+                // ========================================
+                if (HttpServletResponse.class.isAssignableFrom(type)) {
+                    args[i] = response;
+                    continue;
+                }
+                
+                // ========================================
+                // PRIORITÉ 3 : @Session Map<String, Object>
+                // IMPORTANT : DOIT être AVANT la vérification du nom !
+                // ========================================
+                if (param.isAnnotationPresent(Session.class)) {
+                    if (!Map.class.isAssignableFrom(type)) {
+                        throw new IllegalArgumentException(
+                            "@Session can only be used with Map<String, Object> type, found: " + type.getName()
+                        );
+                    }
+                    
+                    Map<String, Object> sessionMap = (Map<String, Object>) request.getAttribute("sessionMap");
+                    if (sessionMap == null) {
+                        sessionMap = new HashMap<>();
+                        request.setAttribute("sessionMap", sessionMap);
+                        System.out.println("⚠️ SessionMap créée (était null)");
+                    }
+                    
+                    System.out.println("📦 ParamResolver - Injection sessionMap : " + sessionMap);
+                    System.out.println("📦 ParamResolver - sessionMap identityHashCode : " + System.identityHashCode(sessionMap));
+                    
+                    args[i] = sessionMap;
+                    continue;
+                }
+                
+                // ========================================
+                // À partir d'ici, on a besoin d'un nom de paramètre
+                // ========================================
                 String name = getParamName(param);
-
                 if (name == null || name.isEmpty()) {
                     throw new IllegalArgumentException(
-                            "Missing required parameter name for argument: " + param.getName());
+                        "Missing required parameter name for argument at index " + i + 
+                        " (type: " + type.getName() + ")"
+                    );
                 }
 
-                // === Gestion des Map ===
+                // ========================================
+                // PRIORITÉ 4 : Map génériques (formData, fichiers)
+                // ========================================
                 if (Map.class.isAssignableFrom(type)) {
                     Type genericType = parameters[i].getParameterizedType();
                     if (genericType instanceof ParameterizedType) {
@@ -53,33 +102,31 @@ public class ParamResolver {
                         }
                     }
                     throw new IllegalArgumentException(
-                            "Unsupported Map type for parameter '" + param.getName()
-                                    + "'. Only Map<String,Object>, Map<String,byte[]>, or Map<String,List<byte[]>> are allowed.");
+                        "Unsupported Map type for parameter '" + name + "' at index " + i +
+                        ". Only Map<String,Object>, Map<String,byte[]>, or Map<String,List<byte[]>> are allowed."
+                    );
                 }
 
-                // === SUPPORT POUR HttpServletRequest (INJECTION AUTOMATIQUE) ===
-                if (HttpServletRequest.class.isAssignableFrom(type)) {
-                    args[i] = request;
-                    continue;
-                }
-
-                // Path variable {id}
+                // ========================================
+                // PRIORITÉ 5 : Path variable {id}
+                // ========================================
                 String pathValue = handler.getPathVariable(name);
                 if (pathValue != null) {
                     args[i] = ConvertUtils.convert(pathValue.trim(), type);
                     continue;
                 }
 
-                // Objet complexe (exclure les types servlet spéciaux)
-                if (!isSimpleType(type)
-                        && !type.isArray()
-                        && !Map.class.isAssignableFrom(type)
-                        && !HttpServletRequest.class.isAssignableFrom(type)) {
+                // ========================================
+                // PRIORITÉ 6 : Objet complexe
+                // ========================================
+                if (!isSimpleType(type) && !type.isArray() && !isSpecialServletType(type)) {
                     args[i] = buildObjectFromParams(type, request.getParameterMap(), "");
                     continue;
                 }
 
-                // Paramètre simple
+                // ========================================
+                // PRIORITÉ 7 : Paramètre simple
+                // ========================================
                 String[] values = request.getParameterValues(name);
                 if (values == null || values.length == 0) {
                     args[i] = null;
@@ -94,19 +141,21 @@ public class ParamResolver {
                     }
                 } catch (Exception e) {
                     throw new IllegalArgumentException(
-                            "Failed to convert parameter '" + name + "' to " + type.getSimpleName());
+                        "Failed to convert parameter '" + name + "' to " + type.getSimpleName()
+                    );
                 }
             }
         } catch (IOException | ServletException e) {
             throw new IllegalArgumentException("Erreur lors de la lecture des fichiers uploadés : " + e.getMessage(), e);
         } catch (Exception e) {
             System.err.println("ParamResolver ERROR: " + e.getMessage());
+            e.printStackTrace();
             throw new IllegalArgumentException("Erreur lors de la résolution des paramètres : " + e.getMessage(), e);
         }
 
         return args;
     }
-    
+
     private static boolean isSpecialServletType(Class<?> type) {
         return HttpServletRequest.class.isAssignableFrom(type)
                 || HttpServletResponse.class.isAssignableFrom(type);
