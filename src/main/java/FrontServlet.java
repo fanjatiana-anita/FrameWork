@@ -20,13 +20,17 @@ public class FrontServlet extends HttpServlet {
     @Override
     public void init() throws ServletException {
         defaultDispatcher = getServletContext().getNamedDispatcher("default");
+        
+        // Charger la configuration d'authentification
+        AuthConfig.loadConfig(getServletContext());
+        
         ServletContext context = getServletContext();
         Map<String, List<RouteHandler>> routes = (Map<String, List<RouteHandler>>) context.getAttribute(ROUTES_KEY);
 
         if (routes == null) {
             routes = ClasspathScanner.scanRoutes();
             context.setAttribute(ROUTES_KEY, routes); 
-            System.out.println("Routes stockées dans ServletContext");
+            System.out.println("Routes stockees dans ServletContext");
         }
     }
 
@@ -50,7 +54,7 @@ public class FrontServlet extends HttpServlet {
                 Object controller = handler.getClazz().getDeclaredConstructor().newInstance();
 
                 // ========================================
-                // ÉTAPE 1 : CHARGER HttpSession → Map
+                // eTAPE 1 : CHARGER HttpSession → Map
                 // ========================================
                 HttpSession httpSession = req.getSession(true); 
                 Map<String, Object> sessionMap = new HashMap<>();
@@ -63,22 +67,64 @@ public class FrontServlet extends HttpServlet {
                 
                 req.setAttribute("sessionMap", sessionMap);
                 
-                System.out.println("=== SESSION CHARGÉE ===");
+                System.out.println("=== SESSION CHARGeE ===");
                 System.out.println("Nombre d'attributs : " + sessionMap.size());
                 sessionMap.forEach((k, v) -> System.out.println("  " + k + " = " + v));
 
                 // ========================================
-                // ÉTAPE 2 : Appeler la méthode du contrôleur
+                // eTAPE 1.5 : VeRIFICATION AUTHENTIFICATION ET RÔLES
+                // ========================================
+                AuthConfig authConfig = AuthConfig.getInstance();
+                
+                // Verifier @Authentified
+                if (method.isAnnotationPresent(Authentified.class)) {
+                    if (!authConfig.isAuthenticated(sessionMap)) {
+                        System.out.println("Acces refuse : utilisateur non Authentified");
+                        handleUnauthorized(req, resp, method, jsonResponse, 401, 
+                            "Vous devez etre connecte pour acceder a cette ressource");
+                        return;
+                    }
+                }
+                
+                // Verifier @Role
+                if (method.isAnnotationPresent(Role.class)) {
+                    Role roleAnnotation = method.getAnnotation(Role.class);
+                    String[] allowedRoles = roleAnnotation.value();
+                    
+                    // @Role implique automatiquement @Authentified
+                    if (!authConfig.isAuthenticated(sessionMap)) {
+                        System.out.println("Acces refuse : utilisateur non Authentified");
+                        handleUnauthorized(req, resp, method, jsonResponse, 401,
+                            "Vous devez etre connecte pour acceder a cette ressource");
+                        return;
+                    }
+                    
+                    // Verifier les rôles
+                    if (!authConfig.hasRole(sessionMap, allowedRoles)) {
+                        String userRole = authConfig.getUserRole(sessionMap);
+                        System.out.println("Acces refuse : rôle insuffisant");
+                        System.out.println("   Rôle utilisateur : " + userRole);
+                        System.out.println("   Rôles requis : " + Arrays.toString(allowedRoles));
+                        handleUnauthorized(req, resp, method, jsonResponse, 403,
+                            "Vous n'avez pas les permissions necessaires. Rôles requis : " + Arrays.toString(allowedRoles));
+                        return;
+                    }
+                    
+                    System.out.println("Acces autorise : rôle valide");
+                }
+
+                // ========================================
+                // eTAPE 2 : Appeler la methode du contrôleur
                 // ========================================
                 Object[] args = ParamResolver.resolveArguments(req, resp, handler);
                 Object result = method.invoke(controller, args);
 
                 // ========================================
-                // ÉTAPE 3 : SYNCHRONISER Map → HttpSession
+                // eTAPE 3 : SYNCHRONISER Map → HttpSession
                 // ========================================
                 sessionMap = (Map<String, Object>) req.getAttribute("sessionMap");
                 if (sessionMap != null) {
-                    // Supprimer les clés qui ont été retirées de la map
+                    // Supprimer les cles qui ont ete retirees de la map
                     Set<String> toRemove = new HashSet<>();
                     Enumeration<String> sessionKeys = httpSession.getAttributeNames();
                     while (sessionKeys.hasMoreElements()) {
@@ -89,23 +135,23 @@ public class FrontServlet extends HttpServlet {
                     }
                     toRemove.forEach(httpSession::removeAttribute);
                     
-                    // Mettre à jour / ajouter les valeurs
+                    // Mettre a jour / ajouter les valeurs
                     for (Map.Entry<String, Object> entry : sessionMap.entrySet()) {
                         httpSession.setAttribute(entry.getKey(), entry.getValue());
                     }
                     
-                    System.out.println("=== SESSION SYNCHRONISÉE ===");
-                    System.out.println("Clés supprimées : " + toRemove);
-                    System.out.println("Clés mises à jour : " + sessionMap.keySet());
+                    System.out.println("=== SESSION SYNCHRONISeE ===");
+                    System.out.println("Cles supprimees : " + toRemove);
+                    System.out.println("Cles mises a jour : " + sessionMap.keySet());
                 }
 
                 // ========================================
-                // ÉTAPE 4 : Gérer le résultat
+                // eTAPE 4 : Gerer le resultat
                 // ========================================
                 
-                // Cas spécial : null (redirection déjà effectuée dans le contrôleur)
+                // Cas special : null (redirection dejà effectuee dans le contrôleur)
                 if (result == null) {
-                    System.out.println("Résultat null - la réponse a déjà été traitée");
+                    System.out.println("Resultat null - la reponse a dejà ete traitee");
                     return;
                 }
 
@@ -211,5 +257,42 @@ public class FrontServlet extends HttpServlet {
 
         resp.setStatus(404);
         resp.getWriter().println("404 - Not Found : " + url);
+    }
+    
+    /**
+     * Gere les erreurs d'autorisation (401 Unauthorized ou 403 Forbidden)
+     * AFFICHE DIRECTEMENT la page d'erreur (pas de redirection)
+     */
+    private void handleUnauthorized(HttpServletRequest req, HttpServletResponse resp, Method method,
+                                   JsonResponse jsonResponse, int statusCode, String message)
+            throws IOException, ServletException {
+        
+        // Si la methode retourne du JSON, repondre en JSON
+        if (method.isAnnotationPresent(Json.class)) {
+            jsonResponse.sendJsonError(statusCode, message);
+            return;
+        }
+        
+        // Sinon, afficher la page d'erreur DIRECTEMENT (pas de redirection)
+        resp.setStatus(statusCode);
+        
+        // Mettre les infos d'erreur dans les attributs de la requete
+        req.setAttribute("errorCode", statusCode);
+        req.setAttribute("errorMessage", message);
+        
+        // Afficher la page d'erreur appropriee
+        String viewPath = statusCode == 401 ? "/error401.jsp" : "/error403.jsp";
+        
+        RequestDispatcher disp = req.getRequestDispatcher(viewPath);
+        if (disp != null) {
+            disp.forward(req, resp);
+        } else {
+            // Fallback si les JSP n'existent pas
+            resp.setContentType("text/html; charset=UTF-8");
+            resp.getWriter().println("<h1>" + statusCode + " - " + 
+                (statusCode == 401 ? "Non Authentified" : "Acces Interdit") + "</h1>");
+            resp.getWriter().println("<p>" + message + "</p>");
+            resp.getWriter().println("<p><a href='" + req.getContextPath() + "/login'>Se connecter</a></p>");
+        }
     }
 }
